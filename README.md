@@ -22,15 +22,15 @@ if err != nil {
     log.Fatal(err)
 }
 
-t.Add(key, len)
+t.Add(key, len, "data")
 
 ipToMatch = net.ParseIP("192.168.122.32")
-matched, err := t.Match(netmatch.Key(ipToMatch))
+val, err := t.Match(netmatch.Key(ipToMatch))
 if err != nil {
     log.Fatal(err)
 }
 
-//matched is true
+//val is "data"
 ```
 
 ## Benchmark
