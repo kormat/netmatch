@@ -1,6 +1,7 @@
 package netmatch
 
 import (
+	"encoding/binary"
 	"net"
 	"testing"
 
@@ -87,23 +88,23 @@ func TestTrie(t *testing.T) {
 	key, length, err := ParseNetwork(network)
 	assert.Nil(t, err)
 
-	err = trie.Add(key, length)
+	err = trie.Add(key, length, "data")
 	assert.Nil(t, err)
 
-	matches, err := trie.Match(matchingKey)
+	data, err := trie.Match(matchingKey)
 	assert.Nil(t, err)
-	assert.True(t, matches)
+	assert.Equal(t, "data", data)
 
-	matches, err = trie.Match(nonMatchingKey)
+	data, err = trie.Match(nonMatchingKey)
 	assert.Nil(t, err)
-	assert.False(t, matches)
+	assert.Nil(t, data)
 
 	err = trie.Remove(key, length)
 	assert.Nil(t, err)
 
-	matches, err = trie.Match(matchingKey)
+	data, err = trie.Match(matchingKey)
 	assert.Nil(t, err)
-	assert.False(t, matches)
+	assert.Nil(t, data)
 }
 
 func TestOverlapping(t *testing.T) {
@@ -111,8 +112,8 @@ func TestOverlapping(t *testing.T) {
 		trie         = New()
 		inBothKey    = Key(net.ParseIP("192.168.1.230"))
 		inBigOnlyKey = Key(net.ParseIP("192.168.1.20"))
-		smallNet     = "192.168.1.255/25"
-		bigNet       = "192.168.1.255/24"
+		smallNet     = "192.168.1.128/25"
+		bigNet       = "192.168.1.0/24"
 	)
 	bigKey, bigLength, err := ParseNetwork(bigNet)
 	assert.Nil(t, err)
@@ -120,63 +121,63 @@ func TestOverlapping(t *testing.T) {
 	smallKey, smallLength, err := ParseNetwork(smallNet)
 	assert.Nil(t, err)
 
-	matches, err := trie.Match(inBothKey)
+	data, err := trie.Match(inBothKey)
 	assert.Nil(t, err)
-	assert.False(t, matches)
+	assert.Nil(t, data)
 
-	matches, err = trie.Match(inBigOnlyKey)
+	data, err = trie.Match(inBigOnlyKey)
 	assert.Nil(t, err)
-	assert.False(t, matches)
+	assert.Nil(t, data)
 
-	err = trie.Add(smallKey, smallLength)
-	assert.Nil(t, err)
-
-	matches, err = trie.Match(inBothKey)
-	assert.Nil(t, err)
-	assert.True(t, matches)
-
-	matches, err = trie.Match(inBigOnlyKey)
-	assert.Nil(t, err)
-	assert.False(t, matches)
-
-	err = trie.Add(bigKey, bigLength)
+	err = trie.Add(smallKey, smallLength, "small")
 	assert.Nil(t, err)
 
-	matches, err = trie.Match(inBothKey)
+	data, err = trie.Match(inBothKey)
 	assert.Nil(t, err)
-	assert.True(t, matches)
+	assert.Equal(t, "small", data)
 
-	matches, err = trie.Match(inBigOnlyKey)
+	data, err = trie.Match(inBigOnlyKey)
 	assert.Nil(t, err)
-	assert.True(t, matches)
+	assert.Nil(t, data)
+
+	err = trie.Add(bigKey, bigLength, "big")
+	assert.Nil(t, err)
+
+	data, err = trie.Match(inBothKey)
+	assert.Nil(t, err)
+	assert.Equal(t, "small", data)
+
+	data, err = trie.Match(inBigOnlyKey)
+	assert.Nil(t, err)
+	assert.Equal(t, "big", data)
 
 	err = trie.Remove(bigKey, bigLength)
 	assert.Nil(t, err)
 	err = trie.Remove(bigKey, bigLength)
 	assert.NotNil(t, err)
 
-	matches, err = trie.Match(inBothKey)
+	data, err = trie.Match(inBothKey)
 	assert.Nil(t, err)
-	assert.True(t, matches)
+	assert.Equal(t, "small", data)
 
-	matches, err = trie.Match(inBigOnlyKey)
+	data, err = trie.Match(inBigOnlyKey)
 	assert.Nil(t, err)
-	assert.False(t, matches)
+	assert.Nil(t, data)
 
 	err = trie.Remove(smallKey, smallLength)
 	assert.Nil(t, err)
 	err = trie.Remove(smallKey, smallLength)
 	assert.NotNil(t, err)
 
-	matches, err = trie.Match(inBothKey)
+	data, err = trie.Match(inBothKey)
 	assert.Nil(t, err)
-	assert.False(t, matches)
+	assert.Nil(t, data)
 
-	matches, err = trie.Match(inBigOnlyKey)
+	data, err = trie.Match(inBigOnlyKey)
 	assert.Nil(t, err)
-	assert.False(t, matches)
+	assert.Nil(t, data)
 
-	err = trie.Add(smallKey, smallLength)
+	err = trie.Add(smallKey, smallLength, "small")
 	assert.Nil(t, err)
 
 	err = trie.Remove(bigKey, bigLength)
@@ -186,13 +187,33 @@ func TestOverlapping(t *testing.T) {
 	assert.Nil(t, err)
 }
 
+func TestBulk(t *testing.T) {
+	trie := New()
+	keys := make([][16]byte, 100)
+	lens := make([]int, 100)
+
+	for i := 0; i < 100; i++ {
+		var err error
+		keys[i], lens[i], err = ParseNetwork(networks[i])
+		assert.Nil(t, err)
+		trie.Add(keys[i], lens[i], i)
+	}
+
+	for i := 0; i < 100; i++ {
+		data, err := trie.Match(keys[i])
+		assert.Nil(t, err)
+		assert.Equal(t, i, data)
+	}
+}
+
 func BenchmarkTrieAdd(b *testing.B) {
 	trie := New()
 	key, length, err := ParseNetwork(networks[0])
 	assert.Nil(b, err)
 
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		trie.Add(key, length)
+		trie.Add(key, length, i)
 	}
 }
 
@@ -203,8 +224,10 @@ func BenchmarkTrieAddRemove(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		trie.Add(key, length)
-		trie.Remove(key, length)
+		err = trie.Add(key, length, i)
+		assert.Nil(b, err)
+		err = trie.Remove(key, length)
+		assert.Nil(b, err)
 	}
 }
 
@@ -215,7 +238,7 @@ func BenchmarkTrie5Match(b *testing.B) {
 	for i := 0; i < 5; i++ {
 		key, length, err := ParseNetwork(networks[i])
 		assert.Nil(b, err)
-		trie.Add(key, length)
+		trie.Add(key, length, i)
 	}
 
 	b.ResetTimer()
@@ -231,7 +254,7 @@ func BenchmarkTrie10Match(b *testing.B) {
 	for i := 0; i < 10; i++ {
 		key, length, err := ParseNetwork(networks[i])
 		assert.Nil(b, err)
-		trie.Add(key, length)
+		trie.Add(key, length, i)
 	}
 
 	b.ResetTimer()
@@ -247,12 +270,29 @@ func BenchmarkTrie100Match(b *testing.B) {
 	for i := 0; i < 100; i++ {
 		key, length, err := ParseNetwork(networks[i])
 		assert.Nil(b, err)
-		trie.Add(key, length)
+		trie.Add(key, length, i)
 	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		trie.Match(inNet100Key)
+	}
+}
+
+func BenchmarkTrieBulkMatch(b *testing.B) {
+	trie := New()
+	nKeys := 1 << 12
+
+	keys := make([][16]byte, nKeys)
+	for i := 0; i < nKeys; i++ {
+		binary.BigEndian.PutUint64(keys[i][:], uint64(i))
+		err := trie.Add(keys[i], 126, i)
+		assert.Nil(b, err)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		trie.Match(keys[i%nKeys])
 	}
 }
 

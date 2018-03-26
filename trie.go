@@ -1,12 +1,16 @@
 package netmatch
 
-import "errors"
+import (
+	"errors"
+)
+
+type Data interface{}
 
 var singleBitMask [8]byte
 
 func init() {
 	for i := 0; i < 8; i++ {
-		singleBitMask[i] = '\x01' << uint(7-i)
+		singleBitMask[i] = 0x1 << uint(7-i)
 	}
 }
 
@@ -16,9 +20,12 @@ var ErrInvalidLength = errors.New("invalid length")
 // ErrNotContained is returned for deletes if the given prefix is not contained.
 var ErrNotContained = errors.New("not contained")
 
+// ErrAlreadyPresent is returned when adding duplicate prefix.
+var ErrAlreadyPresent = errors.New("already present")
+
 type node struct {
 	children [2]*node
-	match    bool
+	data     Data
 }
 
 // Trie implements a prefix tree to match CIDR-like IP subnets.
@@ -35,7 +42,7 @@ func New() *Trie {
 
 // Add adds the given network to the Trie.
 // Note that a valid IPv6 prefix and appropriate length are expected.
-func (t *Trie) Add(prefix [16]byte, length int) error {
+func (t *Trie) Add(prefix [16]byte, length int, data Data) error {
 	if length >= 127 {
 		return ErrInvalidLength
 	}
@@ -60,12 +67,15 @@ func (t *Trie) Add(prefix [16]byte, length int) error {
 		current = next
 	}
 
-	next.match = true
+	if next.data != nil {
+		return ErrNotContained
+	}
+	next.data = data
 	return nil
 }
 
 // Match matches the given IP address (in IPv6 format) against the Trie.
-func (t *Trie) Match(addr [16]byte) (bool, error) {
+func (t *Trie) Match(addr [16]byte) (Data, error) {
 	current := t.root
 	next := t.root
 	for i := 0; i < 127; i++ {
@@ -81,17 +91,13 @@ func (t *Trie) Match(addr [16]byte) (bool, error) {
 		}
 
 		if next == nil {
-			return false, nil
-		}
-
-		if next.match {
-			return true, nil
+			return current.data, nil
 		}
 
 		current = next
 	}
 
-	return false, nil
+	return nil, nil
 }
 
 // Remove removes the given network from the Trie.
@@ -123,10 +129,10 @@ func (t *Trie) delRecur(prefix [16]byte, length, pos int, current *node) error {
 
 	if pos == length-1 {
 		//break
-		if !next.match {
+		if next.data == nil {
 			return ErrNotContained
 		}
-		next.match = false
+		next.data = nil
 		if next.children[0] == nil && next.children[1] == nil {
 			current.children[child] = nil
 		}

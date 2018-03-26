@@ -11,9 +11,9 @@ var v4InV6Prefix = []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff}
 func Key(ip net.IP) [16]byte {
 	var array [16]byte
 
-	if len(ip) == net.IPv4len {
+	if ip4 := ip.To4(); ip4 != nil {
 		copy(array[:], v4InV6Prefix)
-		copy(array[12:], ip)
+		copy(array[12:], ip4)
 	} else {
 		copy(array[:], ip)
 	}
@@ -30,7 +30,7 @@ func ParseNetwork(network string) ([16]byte, int, error) {
 
 	key := Key(ipnet.IP)
 	size, _ := ipnet.Mask.Size()
-	if len(ipnet.IP) == net.IPv4len {
+	if ipnet.IP.To4() != nil {
 		size = size + 12*8
 	}
 
